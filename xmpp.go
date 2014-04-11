@@ -48,6 +48,8 @@ func (jid JID) String() string {
 type IQDefault struct {
 	XMLName xml.Name `xml:"jabber:client iq"`
 	core.Stanza
+
+	// XEP-0199
 	Ping *xep.Ping
 }
 
@@ -73,13 +75,13 @@ func NewIQ(typ, id, to string, e core.Element) core.IQ {
 		iq = &core.IQSession{Stanza: st, Session: v}
 	case *core.RosterQuery:
 		iq = &core.IQRosterQuery{Stanza: st, Query: v}
-	case *xep.DiscoInfoQuery:
+	case *xep.DiscoInfoQuery: // XEP-0030
 		iq = &xep.IQDiscoInfoQuery{Stanza: st, Query: v}
-	case *xep.DiscoItemsQuery:
+	case *xep.DiscoItemsQuery: // XEP-0030
 		iq = &xep.IQDiscoItemsQuery{Stanza: st, Query: v}
-	case *xep.VCard:
+	case *xep.VCard: // XEP-0054
 		iq = &xep.IQVCard{Stanza: st, Card: v}
-	case *xep.Ping:
+	case *xep.Ping: // XEP-0199
 		iq = &xep.IQPing{}
 	default:
 		iq = &IQDefault{Stanza: st}
@@ -92,6 +94,7 @@ type StanMsg struct {
 	XMLName xml.Name `xml:"jabber:client message"`
 	core.StanMsg
 
+	// XEP-0085
 	Active    *xep.ChatStateActive
 	Composing *xep.ChatStateComposing
 	Paused    *xep.ChatStatePaused
@@ -117,4 +120,12 @@ func (e *StanMsg) ChatState() string {
 	}
 
 	return state
+}
+
+type StanPresence struct {
+	XMLName xml.Name `xml:"jabber:client presence"`
+	core.StanPresence
+
+	// XEP-0115
+	Caps *xep.EntityCaps
 }

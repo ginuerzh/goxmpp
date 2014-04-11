@@ -77,7 +77,7 @@ func main() {
 	if err != nil {
 		log.Println(err)
 	}
-	//log.Println(iq.Elem())
+	log.Println(iq.Elem())
 
 	/*
 		infoQuery := &xep.DiscoInfoQuery{}
