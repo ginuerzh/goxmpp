@@ -6,7 +6,8 @@ import (
 	"fmt"
 	xmpp "github.com/ginuerzh/goxmpp"
 	"github.com/ginuerzh/goxmpp/client"
-	core "github.com/ginuerzh/goxmpp/core"
+	"github.com/ginuerzh/goxmpp/core"
+	"github.com/ginuerzh/goxmpp/xep"
 	"log"
 	"os"
 	//"strings"
@@ -43,7 +44,17 @@ func main() {
 
 	go func() {
 		talk.Run(func(st core.Stan) {
-			log.Println(st.Name(), st.Type())
+			//log.Println(st.Name(), st.Type())
+			if st.Name() == "message" {
+				msg := st.(*xmpp.StanMsg)
+				log.Println(msg.Body, msg.ChatState())
+
+				m := &xmpp.StanMsg{}
+				m.To = msg.From
+				m.Types = "chat"
+				m.Body = msg.Body
+				talk.Send(m)
+			}
 		})
 		exit <- 1
 	}()
@@ -56,6 +67,25 @@ func main() {
 	}
 	fmt.Println(roster)
 
+	itemsQuery := &xep.DiscoItemsQuery{}
+	if _, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", itemsQuery)); err != nil {
+		log.Println(err)
+	}
+	fmt.Println(itemsQuery)
+
+	iq, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", &xep.VCard{}))
+	if err != nil {
+		log.Println(err)
+	}
+	//log.Println(iq.Elem())
+
+	/*
+		infoQuery := &xep.DiscoInfoQuery{}
+		if _, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", infoQuery)); err != nil {
+			log.Println(err)
+		}
+		fmt.Println(infoQuery)
+	*/
 	<-exit
 	/*
 		talk.HandleFunc("iq:disco:info", func(client *xmpp.Client, stanza xmpp.Stanza) {

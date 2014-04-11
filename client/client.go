@@ -8,7 +8,8 @@ import (
 	"errors"
 	"fmt"
 	xmpp "github.com/ginuerzh/goxmpp"
-	core "github.com/ginuerzh/goxmpp/core"
+	"github.com/ginuerzh/goxmpp/core"
+	"github.com/ginuerzh/goxmpp/xep"
 	"io"
 	"net"
 	"net/http"
@@ -81,11 +82,17 @@ func (c *Client) Run(handler HandlerFunc) error {
 			fmt.Println(err)
 			return err
 		}
+
 		if st.Name() == "iq" {
-			if st.Type() == "get" || st.Type() == "set" {
-				c.Send(xmpp.NewIQ("result", st.Id(), "", nil))
+			if iq, ok := st.(*xmpp.IQDefault); ok {
+				switch iq.Elem().(type) {
+				case *xep.Ping:
+					c.Send(xmpp.NewIQ("result", st.Id(), "", nil))
+				default:
+					fmt.Println("unknown iq:", iq.Name())
+				}
+				continue
 			}
-			continue
 		}
 
 		if handler != nil {
@@ -185,14 +192,14 @@ func (c *Client) Send(st core.Stan) error {
 	return c.send(st)
 }
 
-func (c *Client) SendIQ(iq core.IQ) (core.Stan, error) {
+func (c *Client) SendIQ(iq core.IQ) (core.IQ, error) {
 	ch := c.iqw.WaitChan(iq.Id(), iq)
 	defer c.iqw.Clean(iq.Id())
 
 	if err := c.send(iq); err != nil {
 		return nil, err
 	}
-	st := <-ch
+	st := core.IQ(<-ch)
 	if st.Error() != nil {
 		return st, st.Error()
 	}
@@ -232,6 +239,8 @@ func (c *Client) Recv() (core.Stan, error) {
 	switch se.Name.Space + " " + se.Name.Local {
 	case xmpp.NSClient + " iq":
 		id := ""
+		var iq core.IQ
+
 		for _, attr := range se.Attr {
 			if attr.Name.Local == "id" {
 				id = attr.Value
@@ -240,22 +249,22 @@ func (c *Client) Recv() (core.Stan, error) {
 		}
 		resp := c.iqw.Get(id)
 		if resp == nil {
-			e = &core.IQEmpty{}
+			iq = &xmpp.IQDefault{}
 		} else {
-			e = resp.st
+			iq = resp.st
 		}
 
-		if err := c.dec.DecodeElement(e, &se); err != nil {
+		if err := c.dec.DecodeElement(iq, &se); err != nil {
 			return nil, err
 		}
 		if resp != nil {
-			resp.ch <- e
+			resp.ch <- iq
 		}
-		return e, nil
+		return iq, nil
 	case xmpp.NSClient + " presence":
 		e = &core.StanPresence{}
 	case xmpp.NSClient + " message":
-		e = &core.StanMsg{}
+		e = &xmpp.StanMsg{}
 	default:
 		return nil, errors.New("unexpected XMPP message " +
 			se.Name.Space + " <" + se.Name.Local + "/>")
@@ -470,10 +479,10 @@ func (w *iqWait) Get(id string) *iqResp {
 	return w.m[id]
 }
 
-func (w *iqWait) WaitChan(id string, stan core.Stan) <-chan core.Stan {
+func (w *iqWait) WaitChan(id string, stan core.IQ) <-chan core.IQ {
 	resp := &iqResp{
 		st: stan,
-		ch: make(chan core.Stan, 1),
+		ch: make(chan core.IQ, 1),
 	}
 	w.m[id] = resp
 	return resp.ch
@@ -484,6 +493,6 @@ func (w *iqWait) Clean(id string) {
 }
 
 type iqResp struct {
-	st core.Stan
-	ch chan core.Stan
+	st core.IQ
+	ch chan core.IQ
 }

@@ -2,7 +2,9 @@
 package xmpp
 
 import (
+	"encoding/xml"
 	"github.com/ginuerzh/goxmpp/core"
+	"github.com/ginuerzh/goxmpp/xep"
 	"strings"
 )
 
@@ -43,22 +45,76 @@ func (jid JID) String() string {
 	return string(jid)
 }
 
+type IQDefault struct {
+	XMLName xml.Name `xml:"jabber:client iq"`
+	core.Stanza
+	Ping *xep.Ping
+}
+
+func (_ IQDefault) Name() string {
+	return "iq"
+}
+
+func (e IQDefault) Elem() core.Element {
+	if e.Ping != nil {
+		return e.Ping
+	}
+	return nil
+}
+
 func NewIQ(typ, id, to string, e core.Element) core.IQ {
 	var iq core.IQ
 
 	st := core.Stanza{Types: typ, To: to, Ids: id}
-
 	switch v := e.(type) {
 	case *core.FeatureBind:
 		iq = &core.IQBind{Stanza: st, Bind: v}
-
 	case *core.FeatureSession:
 		iq = &core.IQSession{Stanza: st, Session: v}
 	case *core.RosterQuery:
 		iq = &core.IQRosterQuery{Stanza: st, Query: v}
+	case *xep.DiscoInfoQuery:
+		iq = &xep.IQDiscoInfoQuery{Stanza: st, Query: v}
+	case *xep.DiscoItemsQuery:
+		iq = &xep.IQDiscoItemsQuery{Stanza: st, Query: v}
+	case *xep.VCard:
+		iq = &xep.IQVCard{Stanza: st, Card: v}
+	case *xep.Ping:
+		iq = &xep.IQPing{}
 	default:
-		iq = &core.IQEmpty{Stanza: st}
+		iq = &IQDefault{Stanza: st}
 	}
 
 	return iq
+}
+
+type StanMsg struct {
+	XMLName xml.Name `xml:"jabber:client message"`
+	core.StanMsg
+
+	Active    *xep.ChatStateActive
+	Composing *xep.ChatStateComposing
+	Paused    *xep.ChatStatePaused
+	Inactive  *xep.ChatStateInactive
+	Gone      *xep.ChatStateGone
+}
+
+func (e *StanMsg) ChatState() string {
+	var state string
+
+	if e.Active != nil {
+		state = e.Active.String()
+	} else if e.Composing != nil {
+		state = e.Composing.String()
+	} else if e.Paused != nil {
+		state = e.Paused.String()
+	} else if e.Inactive != nil {
+		state = e.Inactive.String()
+	} else if e.Gone != nil {
+		state = e.Gone.String()
+	} else {
+		state = ""
+	}
+
+	return state
 }

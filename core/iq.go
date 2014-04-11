@@ -12,19 +12,6 @@ type IQ interface {
 	Elem() Element
 }
 
-type IQEmpty struct {
-	XMLName xml.Name `xml:"jabber:client iq"`
-	Stanza
-}
-
-func (_ IQEmpty) Name() string {
-	return "iq"
-}
-
-func (e IQEmpty) Elem() Element {
-	return nil
-}
-
 type IQBind struct {
 	XMLName xml.Name `xml:"jabber:client iq"`
 	Stanza
