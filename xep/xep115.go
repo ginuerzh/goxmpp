@@ -18,3 +18,7 @@ type EntityCaps struct {
 func (_ EntityCaps) Name() string {
 	return "caps"
 }
+
+func (c EntityCaps) String() string {
+	return "[caps] " + c.Node + "," + c.Ver + "," + c.Ext
+}

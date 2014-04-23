@@ -5,22 +5,7 @@ package xep
 
 import (
 	"encoding/xml"
-	"github.com/ginuerzh/goxmpp/core"
 )
-
-type IQVCard struct {
-	XMLName xml.Name `xml:"jabber:client iq"`
-	core.Stanza
-	Card *VCard
-}
-
-func (_ IQVCard) Name() string {
-	return "iq"
-}
-
-func (e IQVCard) Elem() core.Element {
-	return e.Card
-}
 
 type VCard struct {
 	XMLName    xml.Name     `xml:"vcard-temp vCard"`
@@ -38,10 +23,20 @@ type VCard struct {
 	Addr       []*VCardAddr `xml:"ADR,omitempty"`
 	JabberId   string       `xml:"JABBERID,omitempty"`
 	Desc       string       `xml:"DESC,omitempty"`
+	Photo      *VCardPhoto  `xml:"PHOTO"`
 }
 
 func (_ VCard) Name() string {
 	return "vCard"
+}
+
+func (vc VCard) String() string {
+	return "vcard"
+}
+
+type VCardPhoto struct {
+	Type   string `xml:"TYPE"`
+	BinVal string `xml:"BINVAL"`
 }
 
 type VCardAddr struct {

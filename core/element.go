@@ -5,10 +5,6 @@ import (
 	"encoding/xml"
 )
 
-type Element interface {
-	Name() string
-}
-
 type Stream struct {
 	XMLName xml.Name `xml:"http://etherx.jabber.org/streams stream"`
 	Id      string   `xml:"id,attr,omitempty"`

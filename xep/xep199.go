@@ -5,22 +5,7 @@ package xep
 
 import (
 	"encoding/xml"
-	"github.com/ginuerzh/goxmpp/core"
 )
-
-type IQPing struct {
-	XMLName xml.Name `xml:"jabber:client iq"`
-	core.Stanza
-	P *Ping
-}
-
-func (_ IQPing) Name() string {
-	return "iq"
-}
-
-func (e IQPing) Elem() core.Element {
-	return e.P
-}
 
 type Ping struct {
 	XMLName xml.Name `xml:"urn:xmpp:ping ping"`
@@ -28,4 +13,8 @@ type Ping struct {
 
 func (_ Ping) Name() string {
 	return "ping"
+}
+
+func (_ Ping) String() string {
+	return "[ping]"
 }

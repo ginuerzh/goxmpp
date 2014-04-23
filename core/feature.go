@@ -38,10 +38,18 @@ func (_ FeatureBind) Name() string {
 	return "bind"
 }
 
+func (b FeatureBind) String() string {
+	return "[bind] Jid:" + b.Jid + ", resouce:" + b.Resource
+}
+
 type FeatureSession struct {
 	XMLName xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-session session"`
 }
 
 func (_ FeatureSession) Name() string {
 	return "session"
+}
+
+func (_ FeatureSession) String() string {
+	return "[session]"
 }

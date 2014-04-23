@@ -7,22 +7,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
-	"github.com/ginuerzh/goxmpp/core"
 )
-
-type IQDiscoInfoQuery struct {
-	XMLName xml.Name `xml:"jabber:client iq"`
-	core.Stanza
-	Query *DiscoInfoQuery
-}
-
-func (_ IQDiscoInfoQuery) Name() string {
-	return "iq"
-}
-
-func (e IQDiscoInfoQuery) Elem() core.Element {
-	return e.Query
-}
 
 type DiscoInfoQuery struct {
 	XMLName    xml.Name        `xml:"http://jabber.org/protocol/disco#info query"`
@@ -60,20 +45,6 @@ type InfoFeature struct {
 	Var     string   `xml:"var,attr"`
 }
 
-type IQDiscoItemsQuery struct {
-	XMLName xml.Name `xml:"jabber:client iq"`
-	core.Stanza
-	Query *DiscoItemsQuery
-}
-
-func (_ IQDiscoItemsQuery) Name() string {
-	return "iq"
-}
-
-func (e IQDiscoItemsQuery) Elem() core.Element {
-	return e.Query
-}
-
 type DiscoItemsQuery struct {
 	XMLName xml.Name     `xml:"http://jabber.org/protocol/disco#items query"`
 	Ver     string       `xml:"ver,attr,omitempty"`
@@ -88,7 +59,7 @@ func (_ DiscoItemsQuery) Name() string {
 func (e DiscoItemsQuery) String() string {
 	b := &bytes.Buffer{}
 	for _, item := range e.Items {
-		fmt.Fprintf(b, "%s(%s) %s\n", item.Jid, item.Name)
+		fmt.Fprintf(b, "%s(%s) %s\n", item.Jid, item.Name, item.Node)
 	}
 
 	return b.String()

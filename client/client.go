@@ -9,13 +9,14 @@ import (
 	"fmt"
 	xmpp "github.com/ginuerzh/goxmpp"
 	"github.com/ginuerzh/goxmpp/core"
-	"github.com/ginuerzh/goxmpp/xep"
 	"io"
+	//"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 type Options struct {
@@ -33,7 +34,7 @@ type Options struct {
 	Debug bool
 }
 
-type HandlerFunc func(st core.Stan)
+type HandlerFunc func(st xmpp.Stan)
 
 type Client struct {
 	// Host specifies what host to connect to, as either "hostname" or "hostname:port"
@@ -53,46 +54,43 @@ type Client struct {
 	// connection to server
 	conn *Conn
 
-	// handlers for received stanzas
-	//handlers map[string]HandlerFunc
-
 	dec *xml.Decoder
 	enc *xml.Encoder
 
 	Opts *Options
 
-	iqw *iqWait
+	sendChan chan xmpp.Element
+	rt       *roundTrip
 }
 
 func NewClient(host, user, pwd string, opts *Options) *Client {
+	ch := make(chan xmpp.Element, 10)
+
 	return &Client{
 		Host:     host,
 		User:     user,
 		Password: pwd,
-		//handlers: make(map[string]HandlerFunc),
-		Opts: opts,
-		iqw:  &iqWait{m: make(map[string]*iqResp)},
+		Opts:     opts,
+		sendChan: ch,
+		rt:       NewRoundTrip(ch),
 	}
 }
 
 func (c *Client) Run(handler HandlerFunc) error {
+	go func() {
+		for {
+			v := <-c.sendChan
+			if err := c.enc.Encode(v); err != nil {
+				return
+			}
+		}
+	}()
+
 	for {
 		st, err := c.Recv()
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("Recv error:", err)
 			return err
-		}
-
-		if st.Name() == "iq" {
-			if iq, ok := st.(*xmpp.IQDefault); ok {
-				switch iq.Elem().(type) {
-				case *xep.Ping:
-					c.Send(xmpp.NewIQ("result", st.Id(), "", nil))
-				default:
-					fmt.Println("unknown iq:", iq.Name())
-				}
-				continue
-			}
 		}
 
 		if handler != nil {
@@ -105,6 +103,7 @@ func (c *Client) Run(handler HandlerFunc) error {
 }
 
 func (c *Client) Init() error {
+
 	if c.Opts == nil {
 		c.Opts = &Options{}
 	}
@@ -188,25 +187,16 @@ func streamElement(domain string) []byte {
 		" to='" + domain + "'>")
 }
 
-func (c *Client) Send(st core.Stan) error {
-	return c.send(st)
+func (c *Client) Send(st xmpp.Stan) error {
+	c.sendChan <- st
+	return nil
 }
 
-func (c *Client) SendIQ(iq core.IQ) (core.IQ, error) {
-	ch := c.iqw.WaitChan(iq.Id(), iq)
-	defer c.iqw.Clean(iq.Id())
-
-	if err := c.send(iq); err != nil {
-		return nil, err
-	}
-	st := core.IQ(<-ch)
-	if st.Error() != nil {
-		return st, st.Error()
-	}
-	return st, nil
+func (c *Client) SendIQ(iq xmpp.Stan) (xmpp.Stan, error) {
+	return c.rt.Request(iq)
 }
 
-func (c *Client) send(e core.Element) error {
+func (c *Client) send(e xmpp.Element) error {
 	return c.enc.Encode(e)
 }
 
@@ -219,108 +209,66 @@ func (c *Client) openStream(domain string) (*core.StreamFeatures, error) {
 	if err := c.sendRaw(streamElement(domain)); err != nil {
 		return nil, err
 	}
-	if err := c.recv(&core.Stream{}); err != nil {
+	if _, err := c.recv(); err != nil {
 		return nil, err
 	}
 
-	f := &core.StreamFeatures{}
-	if err := c.recv(f); err != nil {
+	f, err := c.recv()
+	if err != nil || f.Name() != "features" {
 		return nil, errors.New("unmarshal <features>: " + err.Error())
 	}
-	return f, nil
+	return f.(*core.StreamFeatures), nil
 }
 
-func (c *Client) Recv() (core.Stan, error) {
+func (c *Client) Recv() (xmpp.Stan, error) {
+	e, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+
+	st, ok := e.(*xmpp.Stanza)
+	if !ok {
+		return nil, errors.New("Not stanza: " + e.Name())
+	}
+	c.rt.Put(st)
+
+	return st, nil
+}
+
+func (c *Client) recv() (xmpp.Element, error) {
 	se, err := nextStart(c.dec)
 	if err != nil {
 		return nil, err
 	}
-	var e core.Stan
-	switch se.Name.Space + " " + se.Name.Local {
-	case xmpp.NSClient + " iq":
-		id := ""
-		var iq core.IQ
 
-		for _, attr := range se.Attr {
-			if attr.Name.Local == "id" {
-				id = attr.Value
-				break
-			}
-		}
-		resp := c.iqw.Get(id)
-		if resp == nil {
-			iq = &xmpp.IQDefault{}
-		} else {
-			iq = resp.st
-		}
-
-		if err := c.dec.DecodeElement(iq, &se); err != nil {
-			return nil, err
-		}
-		if resp != nil {
-			resp.ch <- iq
-		}
-		return iq, nil
-	case xmpp.NSClient + " presence":
-		e = &core.StanPresence{}
-	case xmpp.NSClient + " message":
-		e = &xmpp.StanMsg{}
-	default:
-		return nil, errors.New("unexpected XMPP message " +
-			se.Name.Space + " <" + se.Name.Local + "/>")
+	elemName := se.Name.Space + " " + se.Name.Local
+	elem := xmpp.E(elemName)
+	if elem == nil {
+		fmt.Println("Unknown element:", elemName)
+		return new(xmpp.NullElement), nil
 	}
-
-	// Unmarshal into that storage.
-	if err = c.dec.DecodeElement(e, &se); err != nil {
-		return nil, err
-	}
-
-	return e, nil
-}
-
-func (c *Client) recv(e core.Element) (err error) {
-	se, err := nextStart(c.dec)
-	if err != nil {
-		return err
-	}
-
-	switch se.Name.Space + " " + se.Name.Local {
+	switch elemName {
 	// stream start element
 	case xmpp.NSStream + " stream":
-		if _, ok := e.(*core.Stream); !ok {
-			return errors.New("xmpp: expected <stream> but got <" +
-				se.Name.Local + "> in " + se.Name.Space)
-		}
-		return nil
-		// stream error
-	case xmpp.NSStream + " error":
-		err = &core.StreamError{}
-	case xmpp.NSSASL + " failure":
-		err = &core.SaslFailure{}
-		// sasl abort
-	case xmpp.NSSASL + " abort":
-		err = &core.SaslAbort{}
-		// tls failture
-	case xmpp.NSTLS + " failure":
-		err = &core.TlsFailure{}
+		return elem, nil
+	case xmpp.NSClient + " iq", xmpp.NSClient + " message", xmpp.NSClient + " presence":
+		return decodeStan(c.dec, &se)
 	}
 
-	if err != nil {
-		e = err.(core.Element)
+	//TODO: nil element handling
+
+	if err := c.dec.DecodeElement(elem, &se); err != nil {
+		return nil, err
 	}
 
-	if err := c.dec.DecodeElement(e, &se); err != nil {
-		return err
-	}
-
-	return
+	return elem, nil
 }
 
-func (c *Client) request(req core.Element, resp core.Element) error {
+func (c *Client) request(req xmpp.Element) (xmpp.Element, error) {
 	if err := c.send(req); err != nil {
-		return err
+		return nil, err
 	}
-	return c.recv(resp)
+	return c.recv()
 }
 
 func (c *Client) init() error {
@@ -340,9 +288,11 @@ func (c *Client) init() error {
 	}
 
 	if features.StartTLS != nil && features.StartTLS.Require != nil {
-		if err := c.request(&core.TlsStartTLS{}, &core.TlsProceed{}); err != nil {
+		_, err := c.request(&core.TlsStartTLS{})
+		if err != nil {
 			return err
 		}
+
 		if c.conn.c, err = tlsHandShake(c.conn.c, domain, c.Opts.TlsConfig); err != nil {
 			return err
 		}
@@ -357,22 +307,24 @@ func (c *Client) init() error {
 	for _, m := range features.Mechanisms.Mechanism {
 		if m == "PLAIN" {
 			mechanism = m
-			if err := c.request(
-				&core.SaslAuth{Mechanism: m, Value: saslAuthPlain(user, c.Password)},
-				&core.SaslSuccess{}); err != nil {
+			if _, err := c.request(
+				&core.SaslAuth{Mechanism: m,
+					Value: saslAuthPlain(user, c.Password)}); err != nil {
 				return err
 			}
 			break
 		}
 		if m == "DIGEST-MD5" {
 			mechanism = m
-			var ch core.SaslChallenge
-			if err := c.request(&core.SaslAuth{Mechanism: m}, &ch); err != nil {
+			//var ch core.SaslChallenge
+			ch, err := c.request(&core.SaslAuth{Mechanism: m})
+			if err != nil || ch.Name() != "challenge" {
 				return errors.New("unmarshal <challenge>: " + err.Error())
 			}
-			if err := c.request(
-				&core.SaslResponse{Value: saslAuthDigestMd5(ch.Value, domain, user, c.Password)},
-				&core.SaslSuccess{}); err != nil {
+
+			if _, err := c.request(
+				&core.SaslResponse{
+					Value: saslAuthDigestMd5(ch.(*core.SaslChallenge).Value, domain, user, c.Password)}); err != nil {
 				return errors.New("unmarshal <success>: " + err.Error())
 			}
 			break
@@ -393,27 +345,31 @@ func (c *Client) init() error {
 	}
 
 	// Send IQ message asking to bind to the local user name.
-	bind := &core.FeatureBind{Resource: c.Opts.Resource}
-	iq := xmpp.NewIQ("set", GenId(), "", bind)
-	if err := c.request(iq, iq); err != nil {
+	iq, err := c.request(xmpp.NewIQ("set", GenId(), "",
+		&core.FeatureBind{Resource: c.Opts.Resource}))
+	if err != nil {
 		return errors.New("bind: " + err.Error())
 	}
 
+	if err = iq.(*xmpp.Stanza).Error(); err != nil {
+		fmt.Println(iq.(*xmpp.Stanza).Error())
+		return errors.New("bind: " + err.Error())
+	}
+	bind := iq.(*xmpp.Stanza).Elements[0].(*core.FeatureBind)
 	c.Jid = xmpp.NewJID(bind.Jid) // our local id
 	fmt.Println("Jid:", c.Jid)
 
 	// open session
 	if features.Session != nil {
-		iq = xmpp.NewIQ("set", GenId(), "", &core.FeatureSession{})
-		if err := c.request(iq, iq); err != nil {
+		iq, err = c.request(xmpp.NewIQ("set", GenId(), "",
+			&core.FeatureSession{}))
+		if err != nil {
+			return errors.New("session: " + err.Error())
+		}
+		if err := iq.(*xmpp.Stanza).Error(); err != nil {
 			return errors.New("session: " + err.Error())
 		}
 	}
-
-	//c.Send(&Presence{})
-	//c.Send(&IQDiscoItems{})
-	//c.Send(&IQDiscoInfo{})
-
 	return nil
 }
 
@@ -429,9 +385,78 @@ func nextStart(p *xml.Decoder) (xml.StartElement, error) {
 		case xml.StartElement:
 			return t, nil
 		case xml.EndElement:
-			return xml.StartElement{}, errors.New("End element: " + t.Name.Local)
+			return xml.StartElement{}, errors.New("Unexpected end element: " + t.Name.Local)
 		}
 	}
+	panic("unreachable")
+}
+
+func nextElement(p *xml.Decoder) (xml.Token, error) {
+	for {
+		t, err := p.Token()
+		if err != nil && err != io.EOF {
+			fmt.Println(err)
+			return nil, err
+		}
+		switch t := t.(type) {
+		case xml.StartElement, xml.EndElement:
+			return t, nil
+		default:
+			fmt.Println("unknown element")
+		}
+	}
+	panic("unreachable")
+}
+
+func decodeStan(p *xml.Decoder, start *xml.StartElement) (xmpp.Stan, error) {
+	st := xmpp.NewStanza(start.Name.Local)
+
+	for _, attr := range start.Attr {
+		switch attr.Name.Local {
+		case "id":
+			st.Ids = attr.Value
+		case "type":
+			st.Types = attr.Value
+		case "from":
+			st.From = attr.Value
+		case "to":
+			st.To = attr.Value
+		case "lang":
+			st.Lang = attr.Value
+		default:
+			fmt.Println("unknown stanza attr:", attr.Name.Local)
+		}
+	}
+
+	for {
+		t, err := nextElement(p)
+		if err != nil {
+			return nil, err
+		}
+
+		var se xml.StartElement
+		switch t := t.(type) {
+		case xml.EndElement:
+			if t.Name.Local != st.Name() {
+				return nil, errors.New("Unexpected end element: " +
+					t.Name.Local + ", should be '</" + st.Name() + ">'")
+			}
+			return st, nil
+
+		case xml.StartElement:
+			se = t
+		}
+
+		elem := xmpp.E(se.Name.Space + " " + se.Name.Local)
+		if elem == nil {
+			elem = &xmpp.NullElement{}
+		}
+		if err := p.DecodeElement(elem, &se); err != nil {
+			return nil, err
+		}
+		st.AddElement(elem)
+	}
+
 	panic("unreachable")
 }
 
@@ -471,28 +496,46 @@ func (t *Conn) Close() error {
 	return t.c.Close()
 }
 
-type iqWait struct {
-	m map[string]*iqResp
+type roundTrip struct {
+	sendChan chan<- xmpp.Element
+	timeout  time.Duration
+	m        map[string]chan xmpp.Stan
 }
 
-func (w *iqWait) Get(id string) *iqResp {
-	return w.m[id]
-}
-
-func (w *iqWait) WaitChan(id string, stan core.IQ) <-chan core.IQ {
-	resp := &iqResp{
-		st: stan,
-		ch: make(chan core.IQ, 1),
+func NewRoundTrip(sendChan chan<- xmpp.Element) *roundTrip {
+	return &roundTrip{
+		sendChan: sendChan,
+		timeout:  3 * time.Second,
+		m:        make(map[string]chan xmpp.Stan),
 	}
-	w.m[id] = resp
-	return resp.ch
 }
 
-func (w *iqWait) Clean(id string) {
-	delete(w.m, id)
+func (this *roundTrip) Request(iq xmpp.Stan) (resp xmpp.Stan, err error) {
+	ch := make(chan xmpp.Stan, 1)
+	this.m[iq.Id()] = ch
+
+	defer delete(this.m, iq.Id())
+
+	for retry := 3; retry > 0; retry-- {
+		this.sendChan <- iq
+
+		select {
+		case <-time.NewTimer(this.timeout).C:
+			err = errors.New("Time-out")
+			continue
+		case v := <-ch:
+			return v, nil
+		}
+	}
+	return
 }
 
-type iqResp struct {
-	st core.IQ
-	ch chan core.IQ
+func (this *roundTrip) Put(iq xmpp.Stan) bool {
+	ch, ok := this.m[iq.Id()]
+	if !ok {
+		return false
+	}
+	ch <- iq
+
+	return true
 }
