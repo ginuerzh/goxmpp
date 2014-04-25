@@ -17,8 +17,8 @@ type DiscoInfoQuery struct {
 	Features   []*InfoFeature  `xml:"feature"`
 }
 
-func (_ DiscoInfoQuery) Name() string {
-	return "query"
+func (q DiscoInfoQuery) Name() string {
+	return q.XMLName.Space + " " + q.XMLName.Local
 }
 
 func (e DiscoInfoQuery) String() string {
@@ -34,15 +34,13 @@ func (e DiscoInfoQuery) String() string {
 }
 
 type InfoIdentity struct {
-	XMLName  xml.Name `xml:"identity"`
-	Category string   `xml:"category,attr"`
-	Type     string   `xml:"type,attr"`
-	Name     string   `xml:"name,attr"`
+	Category string `xml:"category,attr,omitempty"`
+	Type     string `xml:"type,attr,omitempty"`
+	Name     string `xml:"name,attr,omitempty"`
 }
 
 type InfoFeature struct {
-	XMLName xml.Name `xml:"feature"`
-	Var     string   `xml:"var,attr"`
+	Var string `xml:"var,attr"`
 }
 
 type DiscoItemsQuery struct {
@@ -52,8 +50,8 @@ type DiscoItemsQuery struct {
 	Items   []*DiscoItem `xml:"item"`
 }
 
-func (_ DiscoItemsQuery) Name() string {
-	return "query"
+func (q DiscoItemsQuery) Name() string {
+	return q.XMLName.Space + " " + q.XMLName.Local
 }
 
 func (e DiscoItemsQuery) String() string {
@@ -66,8 +64,7 @@ func (e DiscoItemsQuery) String() string {
 }
 
 type DiscoItem struct {
-	XMLName xml.Name `xml:"item"`
-	Jid     string   `xml:"jid,attr,omitempty"`
-	Node    string   `xml:"node,attr,omitempty"`
-	Name    string   `xml:"name,attr,omitempty"`
+	Jid  string `xml:"jid,attr,omitempty"`
+	Node string `xml:"node,attr,omitempty"`
+	Name string `xml:"name,attr,omitempty"`
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/ginuerzh/goxmpp/core"
 	"io"
 	//"log"
+	//"github.com/golang/glog"
 	"net"
 	"net/http"
 	"net/url"
@@ -93,7 +94,7 @@ func (c *Client) Run(handler HandlerFunc) error {
 			return err
 		}
 
-		if handler != nil {
+		if st != nil && handler != nil {
 			handler(st)
 		}
 	}
@@ -230,7 +231,9 @@ func (c *Client) Recv() (xmpp.Stan, error) {
 	if !ok {
 		return nil, errors.New("Not stanza: " + e.Name())
 	}
-	c.rt.Put(st)
+	if ok := c.rt.Put(st); ok {
+		return nil, nil
+	}
 
 	return st, nil
 }
@@ -505,7 +508,7 @@ type roundTrip struct {
 func NewRoundTrip(sendChan chan<- xmpp.Element) *roundTrip {
 	return &roundTrip{
 		sendChan: sendChan,
-		timeout:  3 * time.Second,
+		timeout:  60 * time.Second,
 		m:        make(map[string]chan xmpp.Stan),
 	}
 }
@@ -516,7 +519,7 @@ func (this *roundTrip) Request(iq xmpp.Stan) (resp xmpp.Stan, err error) {
 
 	defer delete(this.m, iq.Id())
 
-	for retry := 3; retry > 0; retry-- {
+	for retry := 1; retry > 0; retry-- {
 		this.sendChan <- iq
 
 		select {
