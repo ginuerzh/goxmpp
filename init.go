@@ -70,6 +70,9 @@ func init() {
 	// XEP04
 	Register("jabber:x:data x",
 		func() Element { return new(xep.XFormData) })
+	// XEP20
+	Register("http://jabber.org/protocol/feature-neg feature",
+		func() Element { return new(xep.Feature) })
 	// XEP30
 	Register("http://jabber.org/protocol/disco#info query",
 		func() Element { return new(xep.DiscoInfoQuery) })

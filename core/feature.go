@@ -19,6 +19,10 @@ func (_ StreamFeatures) Name() string {
 	return "features"
 }
 
+func (_ StreamFeatures) FullName() string {
+	return "http://etherx.jabber.org/streams features"
+}
+
 type FeatureCompress struct {
 	XMLName xml.Name `xml:"http://jabber.org/features/compress compression"`
 	Method  []string `xml:"method"`
@@ -26,6 +30,10 @@ type FeatureCompress struct {
 
 func (_ FeatureCompress) Name() string {
 	return "compression"
+}
+
+func (_ FeatureCompress) FullName() string {
+	return "http://jabber.org/features/compress compression"
 }
 
 type FeatureBind struct {
@@ -38,6 +46,10 @@ func (_ FeatureBind) Name() string {
 	return "bind"
 }
 
+func (_ FeatureBind) FullName() string {
+	return "urn:ietf:params:xml:ns:xmpp-bind bind"
+}
+
 func (b FeatureBind) String() string {
 	return "[bind] Jid:" + b.Jid + ", resouce:" + b.Resource
 }
@@ -48,6 +60,10 @@ type FeatureSession struct {
 
 func (_ FeatureSession) Name() string {
 	return "session"
+}
+
+func (_ FeatureSession) FullName() string {
+	return "urn:ietf:params:xml:ns:xmpp-session session"
 }
 
 func (_ FeatureSession) String() string {

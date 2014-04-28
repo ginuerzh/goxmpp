@@ -15,6 +15,10 @@ func (_ ChatStateActive) Name() string {
 	return "active"
 }
 
+func (_ ChatStateActive) FullName() string {
+	return "http://jabber.org/protocol/chatstates active"
+}
+
 func (_ ChatStateActive) String() string {
 	return "[chatstate] active"
 }
@@ -25,6 +29,10 @@ type ChatStateComposing struct {
 
 func (_ ChatStateComposing) Name() string {
 	return "composing"
+}
+
+func (_ ChatStateComposing) FullName() string {
+	return "http://jabber.org/protocol/chatstates composing"
 }
 
 func (_ ChatStateComposing) String() string {
@@ -39,6 +47,10 @@ func (_ ChatStatePaused) Name() string {
 	return "paused"
 }
 
+func (_ ChatStatePaused) FullName() string {
+	return "http://jabber.org/protocol/chatstates paused"
+}
+
 func (_ ChatStatePaused) String() string {
 	return "[chatstate] paused"
 }
@@ -51,6 +63,10 @@ func (_ ChatStateInactive) Name() string {
 	return "inactive"
 }
 
+func (_ ChatStateInactive) FullName() string {
+	return "http://jabber.org/protocol/chatstates inactive"
+}
+
 func (_ ChatStateInactive) String() string {
 	return "[chatstate] inactive"
 }
@@ -61,6 +77,10 @@ type ChatStateGone struct {
 
 func (_ ChatStateGone) Name() string {
 	return "gone"
+}
+
+func (_ ChatStateGone) FullName() string {
+	return "http://jabber.org/protocol/chatstates gone"
 }
 
 func (_ ChatStateGone) String() string {

@@ -18,6 +18,10 @@ func (_ Stream) Name() string {
 	return "stream"
 }
 
+func (_ Stream) FullName() string {
+	return "http://etherx.jabber.org/streams stream"
+}
+
 type StreamError struct {
 	XMLName xml.Name `xml:"http://etherx.jabber.org/streams error"`
 	Err     xml.Name `xml:",any"`
@@ -28,6 +32,9 @@ func (_ StreamError) Name() string {
 	return "error"
 }
 
+func (_ StreamError) FullName() string {
+	return "http://etherx.jabber.org/streams error"
+}
 func (e StreamError) Error() string {
 	return e.Err.Local + ": " + e.Text
 }

@@ -45,7 +45,11 @@ func NewFormData(typ string, title string, ins string,
 }
 
 func (form XFormData) Name() string {
-	return "xdata"
+	return "x"
+}
+
+func (form XFormData) FullName() string {
+	return "jabber:x:data x"
 }
 
 func (form XFormData) String() string {

@@ -23,6 +23,7 @@ const (
 	NSDiscoItems   = "http://jabber.org/protocol/disco#items"
 	NSVcardTemp    = "vcard-temp"
 	NSPing         = "urn:xmpp:ping"
+	NSSI           = "http://jabber.org/protocol/si"
 	NSHtml         = "http://jabber.org/protocol/xhtml-im"
 	NSChatState    = "http://jabber.org/protocol/chatstates"
 	NSCaps         = "http://jabber.org/protocol/caps"
@@ -65,6 +66,7 @@ func E(elemName string) Element {
 
 type Element interface {
 	Name() string
+	FullName() string
 }
 
 type Stan interface {
@@ -72,16 +74,22 @@ type Stan interface {
 	Id() string
 	Type() string
 	Error() error
+	E() []Element
 }
 
 type Stanza struct {
 	XMLName xml.Name
 	core.Stanza
+	Err      error
 	Elements []Element
 }
 
 func (st Stanza) Name() string {
 	return st.XMLName.Local
+}
+
+func (st Stanza) FullName() string {
+	return st.XMLName.Space + " " + st.XMLName.Local
 }
 
 func (st Stanza) Id() string {
@@ -92,17 +100,16 @@ func (st Stanza) Type() string {
 	return st.Types
 }
 
-func (st *Stanza) Error() (err error) {
-	if st.Types != "error" {
-		return nil
-	}
-	for _, e := range st.Elements {
-		if e.Name() == "error" {
-			err = e.(*core.StanzaError)
-			break
-		}
-	}
-	return
+func (st Stanza) E() []Element {
+	return st.Elements
+}
+
+func (st *Stanza) AddE(elements ...Element) {
+	st.Elements = append(st.Elements, elements...)
+}
+
+func (st *Stanza) Error() error {
+	return st.Err
 }
 
 func (st *Stanza) String() string {
@@ -112,10 +119,6 @@ func (st *Stanza) String() string {
 		fmt.Fprintln(b, e)
 	}
 	return b.String()
-}
-
-func (st *Stanza) AddElement(elements ...Element) {
-	st.Elements = append(st.Elements, elements...)
 }
 
 type JID string
@@ -150,6 +153,10 @@ type NullElement struct {
 }
 
 func (e NullElement) Name() string {
+	return e.XMLName.Local
+}
+
+func (e NullElement) FullName() string {
 	return e.XMLName.Space + " " + e.XMLName.Local
 }
 
@@ -181,10 +188,10 @@ func NewMessage(typ string, to string, body string, subject string) *Stanza {
 	msg.To = to
 
 	if len(body) > 0 {
-		msg.AddElement(&core.MsgBody{Body: body})
+		msg.AddE(&core.MsgBody{Body: body})
 	}
 	if len(subject) > 0 {
-		msg.AddElement(&core.MsgSubject{Subject: subject})
+		msg.AddE(&core.MsgSubject{Subject: subject})
 	}
 
 	return msg

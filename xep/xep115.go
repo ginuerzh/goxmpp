@@ -16,7 +16,11 @@ type EntityCaps struct {
 }
 
 func (_ EntityCaps) Name() string {
-	return "caps"
+	return "c"
+}
+
+func (_ EntityCaps) FullName() string {
+	return "http://jabber.org/protocol/caps c"
 }
 
 func (c EntityCaps) String() string {

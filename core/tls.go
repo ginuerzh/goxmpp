@@ -15,12 +15,20 @@ func (_ TlsStartTLS) Name() string {
 	return "starttls"
 }
 
+func (_ TlsStartTLS) FullName() string {
+	return "urn:ietf:params:xml:ns:xmpp-tls starttls"
+}
+
 type TlsFailure struct {
 	XMLName xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-tls failure"`
 }
 
 func (_ TlsFailure) Name() string {
-	return "tls-failure"
+	return "failure"
+}
+
+func (_ TlsFailure) FullName() string {
+	return "urn:ietf:params:xml:ns:xmpp-tls failure"
 }
 
 func (_ TlsFailure) Error() string {
@@ -33,4 +41,8 @@ type TlsProceed struct {
 
 func (_ TlsProceed) Name() string {
 	return "proceed"
+}
+
+func (_ TlsProceed) FullName() string {
+	return "urn:ietf:params:xml:ns:xmpp-tls proceed"
 }

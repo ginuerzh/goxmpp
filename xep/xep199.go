@@ -15,6 +15,10 @@ func (_ Ping) Name() string {
 	return "ping"
 }
 
+func (_ Ping) FullName() string {
+	return "urn:xmpp:ping ping"
+}
+
 func (_ Ping) String() string {
 	return "[ping]"
 }

@@ -25,8 +25,12 @@ func NewByteStreamQuery(sid, mode string, usedHost *StreamHostUsed, hosts ...*St
 	}
 }
 
-func (q ByteStreamsQuery) Name() string {
-	return q.XMLName.Space + " " + q.XMLName.Local
+func (_ ByteStreamsQuery) Name() string {
+	return "query"
+}
+
+func (_ ByteStreamsQuery) FullName() string {
+	return "http://jabber.org/protocol/bytestreams query"
 }
 
 func (q ByteStreamsQuery) String() string {

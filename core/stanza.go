@@ -27,6 +27,10 @@ func (_ StanzaError) Name() string {
 	return "error"
 }
 
+func (_ StanzaError) FullName() string {
+	return "jabber:client error"
+}
+
 func (e *StanzaError) Error() string {
 	return e.Code + ": " + e.Reason.Local
 }
@@ -41,6 +45,10 @@ func (_ *RosterQuery) Name() string {
 	return "query"
 }
 
+func (_ *RosterQuery) FullName() string {
+	return "jabber:iq:roster query"
+}
+
 func (e RosterQuery) String() string {
 	b := &bytes.Buffer{}
 	for _, item := range e.Items {
@@ -51,7 +59,7 @@ func (e RosterQuery) String() string {
 }
 
 type RosterItem struct {
-	XMLName      xml.Name `xml:"item"`
+	//XMLName      xml.Name `xml:"item"`
 	Jid          string   `xml:"jid,attr,omitempty"`
 	Name         string   `xml:"name,attr,omitempty"`
 	Subscription string   `xml:"subscription,attr,omitempty"`
@@ -70,6 +78,10 @@ func (_ MsgBody) Name() string {
 	return "body"
 }
 
+func (_ MsgBody) FullName() string {
+	return "jabber:client body"
+}
+
 func (mb MsgBody) String() string {
 	return "[body] " + mb.Body
 }
@@ -82,6 +94,10 @@ type MsgSubject struct {
 
 func (_ MsgSubject) Name() string {
 	return "subject"
+}
+
+func (_ MsgSubject) FullName() string {
+	return "jabber:client subject"
 }
 
 func (ms MsgSubject) String() string {
@@ -98,6 +114,10 @@ func (_ MsgThread) Name() string {
 	return "thread"
 }
 
+func (_ MsgThread) FullName() string {
+	return "jabber:client thread"
+}
+
 func (t MsgThread) String() string {
 	return "[subject] " + t.Value
 }
@@ -109,6 +129,10 @@ type MsgHtml struct {
 
 func (_ MsgHtml) Name() string {
 	return "html"
+}
+
+func (_ MsgHtml) FullName() string {
+	return "http://jabber.org/protocol/xhtml-im html"
 }
 
 func (h MsgHtml) String() string {
@@ -124,6 +148,10 @@ func (_ PresenceShow) Name() string {
 	return "show"
 }
 
+func (_ PresenceShow) FullName() string {
+	return "jabber:client show"
+}
+
 func (p PresenceShow) String() string {
 	return "[show] " + p.Show
 }
@@ -137,6 +165,10 @@ func (_ PresenceStatus) Name() string {
 	return "status"
 }
 
+func (_ PresenceStatus) FullName() string {
+	return "jabber:client status"
+}
+
 func (p PresenceStatus) String() string {
 	return "[status] " + p.Status
 }
@@ -148,6 +180,10 @@ type PresencePriority struct {
 
 func (_ PresencePriority) Name() string {
 	return "priority"
+}
+
+func (_ PresencePriority) FullName() string {
+	return "jabber:client priority"
 }
 
 func (p PresencePriority) String() string {

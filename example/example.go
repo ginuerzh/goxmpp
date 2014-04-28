@@ -24,8 +24,6 @@ var password = flag.String("password", "", "password")
 var notls = flag.Bool("notls", false, "No TLS")
 var debug = flag.Bool("debug", false, "debug output")
 
-var fileName = "recvFile"
-
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
@@ -42,6 +40,80 @@ func main() {
 	talk := client.NewClient(*server, *username, *password,
 		&client.Options{NoTLS: *notls, Debug: *debug, TlsConfig: &tls.Config{InsecureSkipVerify: true}})
 
+	talk.HandleFunc(xmpp.NSClient+" message", func(stanza *core.Stanza, e xmpp.Element) {
+		msg := e.(*xmpp.Stanza)
+		body := ""
+		subject := ""
+		for _, e := range msg.E() {
+			if e.Name() == "body" {
+				body = e.(*core.MsgBody).Body
+				break
+			}
+			if e.Name() == "subject" {
+				subject = e.(*core.MsgSubject).Subject
+			}
+		}
+		if len(body) > 0 {
+			talk.Send(xmpp.NewMessage(stanza.Types, stanza.From, body, subject))
+		}
+	})
+
+	talk.HandleFunc(xmpp.NSClient+" presence", func(stanza *core.Stanza, e xmpp.Element) {
+		if stanza.Types == "subscribe" {
+			talk.Send(xmpp.NewPresence("subscribed", stanza.Ids, stanza.From))
+			talk.Send(xmpp.NewPresence("subscribe", client.GenId(), stanza.From))
+		}
+	})
+
+	talk.HandleFunc(xmpp.NSPing+" ping", func(stanza *core.Stanza, e xmpp.Element) {
+		talk.Send(xmpp.NewIQ("result", stanza.Ids, stanza.From, nil))
+	})
+
+	filename := ""
+	talk.HandleFunc(xmpp.NSSI+" si", func(stanza *core.Stanza, e xmpp.Element) {
+		si := e.(*xep.SI)
+		filename = si.File.Name
+		submit := xep.NewFormData("submit", "", "",
+			xep.NewFormField("", "", "stream-method", "",
+				[]string{xmpp.NSByteStreams}, false, nil))
+
+		talk.Send(xmpp.NewIQ("result", stanza.Ids, stanza.From,
+			xep.NewSI("", "", "", nil, xep.NewFeature(submit))))
+	})
+
+	talk.HandleFunc(xmpp.NSDiscoInfo+" query", func(stanza *core.Stanza, e xmpp.Element) {
+		if stanza.Types == "result" {
+			return
+		}
+		talk.Send(xmpp.NewIQ("result", stanza.Ids, stanza.From, xmpp.DiscInfoResult()))
+	})
+
+	talk.HandleFunc(xmpp.NSByteStreams+" query", func(stanza *core.Stanza, e xmpp.Element) {
+		query := e.(*xep.ByteStreamsQuery)
+		addr := query.Hosts[1].Host + ":" + query.Hosts[1].Port
+
+		c, err := net.Dial("tcp", addr)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		defer c.Close()
+		if err := socks5(c, xep.Sha1Addr(query.Sid, stanza.From, stanza.To)); err != nil {
+			log.Println(err)
+			return
+		}
+		talk.Send(xmpp.NewIQ("result", stanza.Ids, stanza.From,
+			xep.NewByteStreamQuery(query.Sid, "",
+				xep.NewStreamHostUsed(query.Hosts[1].Jid), nil)))
+
+		file, err := os.Create(filename)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		io.Copy(file, c)
+	})
+
 	if err := talk.Init(); err != nil {
 		log.Fatal(err)
 	}
@@ -49,84 +121,7 @@ func main() {
 	exit := make(chan int, 1)
 
 	go func() {
-		talk.Run(func(st xmpp.Stan) {
-			fmt.Println(st)
-			stanza := st.(*xmpp.Stanza)
-			if st.Name() == "message" {
-				msg := stanza
-				body := ""
-				subject := ""
-				for _, e := range msg.Elements {
-					if e.Name() == "body" {
-						body = e.(*core.MsgBody).Body
-						break
-					}
-					if e.Name() == "subject" {
-						subject = e.(*core.MsgSubject).Subject
-					}
-				}
-				if len(body) > 0 {
-					talk.Send(xmpp.NewMessage("chat", msg.From, body, subject))
-				}
-			}
-			if st.Name() == "iq" {
-				iq := stanza
-				for _, e := range iq.Elements {
-					if e.Name() == "ping" {
-						talk.Send(xmpp.NewIQ("result", iq.Id(), "", nil))
-					}
-					if e.Name() == "si" {
-						fileName = e.(*xep.SI).File.Name
-
-						submit := xep.NewFormData("submit", "", "",
-							xep.NewFormField("", "", "stream-method", "",
-								[]string{xmpp.NSByteStreams}, false, nil))
-						si := xep.NewSI("", "", "",
-							nil,
-							xep.NewFeatureNeg(submit))
-						talk.Send(xmpp.NewIQ("result", iq.Id(), iq.From, si))
-					}
-
-					if e.Name() == xmpp.NSDiscoInfo+" query" {
-						talk.Send(xmpp.NewIQ("result", iq.Id(), iq.From, xmpp.DiscInfoResult()))
-					}
-					if e.Name() == xmpp.NSByteStreams+" query" {
-						query := e.(*xep.ByteStreamsQuery)
-						addr := query.Hosts[0].Host + ":" + query.Hosts[0].Port
-
-						c, err := net.Dial("tcp", addr)
-						if err != nil {
-							log.Println(err)
-							continue
-						}
-						defer c.Close()
-						if err := socks5(c, xep.Sha1Addr(query.Sid, iq.From, iq.To)); err != nil {
-							log.Println(err)
-							continue
-						}
-						talk.Send(xmpp.NewIQ("result", iq.Id(), iq.From,
-							xep.NewByteStreamQuery(query.Sid, "",
-								xep.NewStreamHostUsed(query.Hosts[0].Jid), nil)))
-
-						file, err := os.Create(fileName)
-						if err != nil {
-							log.Println(err)
-							continue
-						}
-						io.Copy(file, c)
-					}
-				}
-
-			}
-
-			if st.Name() == "presence" {
-				presence := stanza
-				if presence.Type() == "subscribe" {
-					talk.Send(xmpp.NewPresence("subscribed", presence.Id(), presence.From))
-					talk.Send(xmpp.NewPresence("subscribe", client.GenId(), presence.From))
-				}
-			}
-		})
+		talk.Run()
 		exit <- 1
 	}()
 
@@ -138,43 +133,62 @@ func main() {
 	}
 	fmt.Println(iq)
 
-	iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", &xep.DiscoItemsQuery{}))
-	if err != nil {
-		log.Println(err)
-	}
-	fmt.Println(iq)
-
 	iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", &xep.DiscoInfoQuery{}))
 	if err != nil {
 		log.Println(err)
 	}
 	fmt.Println(iq)
 
-	iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "proxy.gerry-ubuntu-work", &xep.ByteStreamsQuery{}))
+	iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", &xep.DiscoItemsQuery{}))
 	if err != nil {
 		log.Println(err)
 	}
 	fmt.Println(iq)
 
+	s5b := ""
+	for _, item := range iq.E()[0].(*xep.DiscoItemsQuery).Items {
+		iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), item.Jid, &xep.DiscoInfoQuery{}))
+		log.Println(iq)
+		result := iq.E()[0].(*xep.DiscoInfoQuery)
+		if result.Identities[0].Category == "proxy" && result.Identities[0].Type == "bytestreams" {
+			s5b = item.Jid
+		}
+	}
+
+	iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), s5b, &xep.ByteStreamsQuery{}))
+	if err != nil {
+		log.Println(err)
+	}
+	fmt.Println(iq)
+	streamHost := iq.E()[0].(*xep.ByteStreamsQuery).Hosts[0]
+
+	form := xep.NewFormData("form", "", "",
+		xep.NewFormField(xep.FieldSList, "", "stream-method", "", nil, false,
+			xep.NewFormOption("", xmpp.NSByteStreams)))
+	si := xep.NewSI(client.GenId(), "image/jpeg", xmpp.NSFileTransfer,
+		xep.NewFileTransfer("001.jpg", "1024", "", "", ""),
+		xep.NewFeature(form))
+	iq, err = talk.SendIQ(xmpp.NewIQ("set", client.GenId(), "user002@gerry-ubuntu-work/Spark 2.6.3", si))
+	fmt.Println(iq)
+
+	iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(),
+		"user002@gerry-ubuntu-work/Spark 2.6.3", &xep.DiscoInfoQuery{}))
+	fmt.Println(iq)
+
+	//iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "user002@gerry-ubuntu-work/Spark 2.6.3",
+	//	&xep.ByteStreamsQuery{}))
+	//fmt.Println(iq)
+
+	iq, err = talk.SendIQ(xmpp.NewIQ("set", client.GenId(),
+		"user002@gerry-ubuntu-work/Spark 2.6.3", xep.NewByteStreamQuery(client.GenId(), "tcp", nil, streamHost)))
+	fmt.Println(iq)
+
 	/*
-		form := xep.NewFormData("form", "", "",
-			xep.NewFormField(xep.FieldSList, "", "stream-method", "", nil, false,
-				xep.NewFormOption("", xmpp.NSByteStreams), xep.NewFormOption("", xmpp.NSIBB)))
-		si := xep.NewSI(client.GenId(), "image/jpeg", xmpp.NSFileTransfer,
-			xep.NewFileTransfer("001.jpg", "1024", "", "", ""),
-			xep.NewFeatureNeg(form))
-		iq, err = talk.SendIQ(xmpp.NewIQ("set", client.GenId(), "user002@gerry-ubuntu-work/Spark 2.6.3", si))
-		fmt.Println(iq)
-
-		iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "user002@gerry-ubuntu-work/Spark 2.6.3",
-			&xep.ByteStreamsQuery{}))
-		fmt.Println(iq)
-
-			vcard := &xep.VCard{}
-			_, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", vcard))
-			if err != nil {
-				log.Println(err)
-			}
+		vcard := &xep.VCard{}
+		_, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", vcard))
+		if err != nil {
+			log.Println(err)
+		}
 
 			if vcard.Photo != nil {
 				fmt.Println(vcard.Photo.Type)

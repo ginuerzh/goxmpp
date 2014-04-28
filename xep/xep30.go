@@ -17,8 +17,12 @@ type DiscoInfoQuery struct {
 	Features   []*InfoFeature  `xml:"feature"`
 }
 
-func (q DiscoInfoQuery) Name() string {
-	return q.XMLName.Space + " " + q.XMLName.Local
+func (_ DiscoInfoQuery) Name() string {
+	return "query"
+}
+
+func (_ DiscoInfoQuery) FullName() string {
+	return "http://jabber.org/protocol/disco#info query"
 }
 
 func (e DiscoInfoQuery) String() string {
@@ -50,8 +54,12 @@ type DiscoItemsQuery struct {
 	Items   []*DiscoItem `xml:"item"`
 }
 
-func (q DiscoItemsQuery) Name() string {
-	return q.XMLName.Space + " " + q.XMLName.Local
+func (_ DiscoItemsQuery) Name() string {
+	return "query"
+}
+
+func (_ DiscoItemsQuery) FullName() string {
+	return "http://jabber.org/protocol/disco#items query"
 }
 
 func (e DiscoItemsQuery) String() string {

@@ -35,7 +35,7 @@ type Options struct {
 	Debug bool
 }
 
-type HandlerFunc func(st xmpp.Stan)
+type HandlerFunc func(stanza *core.Stanza, e xmpp.Element)
 
 type Client struct {
 	// Host specifies what host to connect to, as either "hostname" or "hostname:port"
@@ -62,6 +62,8 @@ type Client struct {
 
 	sendChan chan xmpp.Element
 	rt       *roundTrip
+
+	handlers map[string]HandlerFunc
 }
 
 func NewClient(host, user, pwd string, opts *Options) *Client {
@@ -74,10 +76,15 @@ func NewClient(host, user, pwd string, opts *Options) *Client {
 		Opts:     opts,
 		sendChan: ch,
 		rt:       NewRoundTrip(ch),
+		handlers: make(map[string]HandlerFunc),
 	}
 }
 
-func (c *Client) Run(handler HandlerFunc) error {
+func (c *Client) HandleFunc(fullName string, handler HandlerFunc) {
+	c.handlers[fullName] = handler
+}
+
+func (c *Client) Run() error {
 	go func() {
 		for {
 			v := <-c.sendChan
@@ -88,14 +95,10 @@ func (c *Client) Run(handler HandlerFunc) error {
 	}()
 
 	for {
-		st, err := c.Recv()
+		_, err := c.Recv()
 		if err != nil {
 			fmt.Println("Recv error:", err)
 			return err
-		}
-
-		if st != nil && handler != nil {
-			handler(st)
 		}
 	}
 
@@ -235,6 +238,16 @@ func (c *Client) Recv() (xmpp.Stan, error) {
 		return nil, nil
 	}
 
+	for _, e := range st.E() {
+		if handler, ok := c.handlers[e.FullName()]; ok {
+			handler(&st.Stanza, e)
+		}
+	}
+
+	if handler, ok := c.handlers[st.FullName()]; ok {
+		handler(&st.Stanza, e)
+	}
+
 	return st, nil
 }
 
@@ -244,18 +257,17 @@ func (c *Client) recv() (xmpp.Element, error) {
 		return nil, err
 	}
 
-	elemName := se.Name.Space + " " + se.Name.Local
-	elem := xmpp.E(elemName)
+	elem := xmpp.E(se.Name.Space + " " + se.Name.Local)
 	if elem == nil {
-		fmt.Println("Unknown element:", elemName)
+		fmt.Println("Unknown element:", elem.FullName())
 		return new(xmpp.NullElement), nil
 	}
-	switch elemName {
+	switch elem.Name() {
 	// stream start element
-	case xmpp.NSStream + " stream":
+	case "stream":
 		return elem, nil
-	case xmpp.NSClient + " iq", xmpp.NSClient + " message", xmpp.NSClient + " presence":
-		return decodeStan(c.dec, &se)
+	case "iq", "message", "presence":
+		return c.decodeStan(&se)
 	}
 
 	//TODO: nil element handling
@@ -411,7 +423,7 @@ func nextElement(p *xml.Decoder) (xml.Token, error) {
 	panic("unreachable")
 }
 
-func decodeStan(p *xml.Decoder, start *xml.StartElement) (xmpp.Stan, error) {
+func (c *Client) decodeStan(start *xml.StartElement) (xmpp.Stan, error) {
 	st := xmpp.NewStanza(start.Name.Local)
 
 	for _, attr := range start.Attr {
@@ -432,7 +444,7 @@ func decodeStan(p *xml.Decoder, start *xml.StartElement) (xmpp.Stan, error) {
 	}
 
 	for {
-		t, err := nextElement(p)
+		t, err := nextElement(c.dec)
 		if err != nil {
 			return nil, err
 		}
@@ -454,10 +466,14 @@ func decodeStan(p *xml.Decoder, start *xml.StartElement) (xmpp.Stan, error) {
 		if elem == nil {
 			elem = &xmpp.NullElement{}
 		}
-		if err := p.DecodeElement(elem, &se); err != nil {
+		if err := c.dec.DecodeElement(elem, &se); err != nil {
 			return nil, err
 		}
-		st.AddElement(elem)
+		if err, ok := elem.(*core.StanzaError); ok {
+			st.Err = err
+		} else {
+			st.AddE(elem)
+		}
 	}
 
 	panic("unreachable")

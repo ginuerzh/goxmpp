@@ -9,7 +9,7 @@ import (
 
 type VCard struct {
 	XMLName    xml.Name     `xml:"vcard-temp vCard"`
-	FullName   string       `xml:"FN,omitempty"`
+	FName      string       `xml:"FN,omitempty"`
 	FamilyName string       `xml:"N>FAMILY,omitempty"`
 	GivenName  string       `xml:"N>GIVEN,omitempty"`
 	MidName    string       `xml:"N>MIDDLE,omitempty"`
@@ -28,6 +28,10 @@ type VCard struct {
 
 func (_ VCard) Name() string {
 	return "vCard"
+}
+
+func (_ VCard) FullName() string {
+	return "vcard-temp vCard"
 }
 
 func (vc VCard) String() string {
