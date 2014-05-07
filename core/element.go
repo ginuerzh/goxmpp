@@ -35,6 +35,6 @@ func (_ StreamError) Name() string {
 func (_ StreamError) FullName() string {
 	return "http://etherx.jabber.org/streams error"
 }
-func (e StreamError) Error() string {
+func (e *StreamError) Error() string {
 	return e.Err.Local + ": " + e.Text
 }

@@ -101,6 +101,9 @@ func init() {
 	// XEP115
 	Register("http://jabber.org/protocol/caps c",
 		func() Element { return new(xep.EntityCaps) })
+	// XEP153
+	Register("vcard-temp:x:update x",
+		func() Element { return new(xep.VCardUpdate) })
 	// XEP166
 	Register("urn:xmpp:jingle:1 jingle",
 		func() Element { return new(xep.Jingle) })

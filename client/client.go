@@ -10,11 +10,10 @@ import (
 	xmpp "github.com/ginuerzh/goxmpp"
 	"github.com/ginuerzh/goxmpp/core"
 	"io"
-	//"log"
+	"log"
 	//"github.com/golang/glog"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -29,13 +28,17 @@ type Options struct {
 	// be used.
 	NoTLS bool
 
+	Proxy string
+
 	TlsConfig *tls.Config
 
 	// Debug output
 	Debug bool
 }
 
-type HandlerFunc func(stanza *core.Stanza, e xmpp.Element)
+type HandlerFunc func(stanza *core.StanzaHeader, e xmpp.Element)
+type LoginFunc func(err error)
+type ErrorFunc func(err error)
 
 type Client struct {
 	// Host specifies what host to connect to, as either "hostname" or "hostname:port"
@@ -61,9 +64,12 @@ type Client struct {
 	Opts *Options
 
 	sendChan chan xmpp.Element
+	recvChan chan xmpp.Stan
 	rt       *roundTrip
 
-	handlers map[string]HandlerFunc
+	handlers     map[string]HandlerFunc
+	loginHandler LoginFunc
+	errorHandler ErrorFunc
 }
 
 func NewClient(host, user, pwd string, opts *Options) *Client {
@@ -75,6 +81,7 @@ func NewClient(host, user, pwd string, opts *Options) *Client {
 		Password: pwd,
 		Opts:     opts,
 		sendChan: ch,
+		recvChan: make(chan xmpp.Stan, 10),
 		rt:       NewRoundTrip(ch),
 		handlers: make(map[string]HandlerFunc),
 	}
@@ -84,20 +91,47 @@ func (c *Client) HandleFunc(fullName string, handler HandlerFunc) {
 	c.handlers[fullName] = handler
 }
 
+func (c *Client) OnLogined(loginFunc LoginFunc) {
+	c.loginHandler = loginFunc
+}
+
+func (c *Client) OnError(errFunc ErrorFunc) {
+	c.errorHandler = errFunc
+}
+
 func (c *Client) Run() error {
+	exit := make(chan error, 1)
+
+	err := c.Login()
+	if c.loginHandler != nil {
+		go c.loginHandler(err)
+	}
+	if err != nil {
+		return err
+	}
+
 	go func() {
 		for {
-			v := <-c.sendChan
-			if err := c.enc.Encode(v); err != nil {
+			_, err := c.Recv()
+			if err != nil {
+				log.Println("recv:", err)
+				exit <- err
 				return
 			}
 		}
 	}()
 
 	for {
-		_, err := c.Recv()
-		if err != nil {
-			fmt.Println("Recv error:", err)
+		select {
+		case v := <-c.sendChan:
+			if err := c.enc.Encode(v); err != nil {
+				return err
+			}
+		case <-c.recvChan:
+		case err := <-exit:
+			if c.errorHandler != nil {
+				go c.errorHandler(err)
+			}
 			return err
 		}
 	}
@@ -106,14 +140,14 @@ func (c *Client) Run() error {
 
 }
 
-func (c *Client) Init() error {
+func (c *Client) Login() error {
 
 	if c.Opts == nil {
 		c.Opts = &Options{}
 	}
 
 	host := c.Host
-	conn, err := connect(host, c.User, c.Password)
+	conn, err := connect(host, c.User, c.Password, c.Opts.Proxy)
 	if err != nil {
 		return err
 	}
@@ -137,9 +171,13 @@ func (c *Client) Init() error {
 
 	return nil
 }
-func connect(host, user, passwd string) (net.Conn, error) {
-	addr := host
 
+func (c *Client) Close() error {
+	c.sendRaw([]byte("</stream:stream>"))
+	return c.conn.Close()
+}
+
+func connect(host, user, passwd, proxy string) (net.Conn, error) {
 	if strings.TrimSpace(host) == "" {
 		a := strings.SplitN(user, "@", 2)
 		if len(a) == 2 {
@@ -150,15 +188,10 @@ func connect(host, user, passwd string) (net.Conn, error) {
 	if len(a) == 1 {
 		host += ":5222"
 	}
-	proxy := os.Getenv("HTTP_PROXY")
-	if proxy == "" {
-		proxy = os.Getenv("http_proxy")
-	}
-	if proxy != "" {
-		url, err := url.Parse(proxy)
-		if err == nil {
-			addr = url.Host
-		}
+
+	addr := host
+	if len(proxy) > 0 {
+		addr = proxy
 	}
 	c, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -234,18 +267,21 @@ func (c *Client) Recv() (xmpp.Stan, error) {
 	if !ok {
 		return nil, errors.New("Not stanza: " + e.Name())
 	}
+
+	c.recvChan <- st
+
 	if ok := c.rt.Put(st); ok {
-		return nil, nil
+		return st, nil
 	}
 
 	for _, e := range st.E() {
 		if handler, ok := c.handlers[e.FullName()]; ok {
-			handler(&st.Stanza, e)
+			go handler(&st.StanzaHeader, e)
 		}
 	}
 
 	if handler, ok := c.handlers[st.FullName()]; ok {
-		handler(&st.Stanza, e)
+		go handler(&st.StanzaHeader, e)
 	}
 
 	return st, nil
@@ -276,7 +312,25 @@ func (c *Client) recv() (xmpp.Element, error) {
 		return nil, err
 	}
 
+	if err, ok := checkError(elem); ok {
+		return nil, err
+	}
+
 	return elem, nil
+}
+
+func checkError(e xmpp.Element) (error, bool) {
+	switch v := e.(type) {
+	case *core.StreamError:
+		return v, true
+	case *core.SaslAbort:
+		return v, true
+	case *core.SaslFailure:
+		return v, true
+	case *core.TlsFailure:
+		return v, true
+	}
+	return nil, false
 }
 
 func (c *Client) request(req xmpp.Element) (xmpp.Element, error) {
@@ -371,7 +425,7 @@ func (c *Client) init() error {
 		return errors.New("bind: " + err.Error())
 	}
 	bind := iq.(*xmpp.Stanza).Elements[0].(*core.FeatureBind)
-	c.Jid = xmpp.NewJID(bind.Jid) // our local id
+	c.Jid = xmpp.ToJID(bind.Jid) // our local id
 	fmt.Println("Jid:", c.Jid)
 
 	// open session

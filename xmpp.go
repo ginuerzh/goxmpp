@@ -22,6 +22,7 @@ const (
 	NSDiscoInfo    = "http://jabber.org/protocol/disco#info"
 	NSDiscoItems   = "http://jabber.org/protocol/disco#items"
 	NSVcardTemp    = "vcard-temp"
+	NSVcardUpdate  = "vcard-temp:x:update"
 	NSPing         = "urn:xmpp:ping"
 	NSSI           = "http://jabber.org/protocol/si"
 	NSHtml         = "http://jabber.org/protocol/xhtml-im"
@@ -79,7 +80,7 @@ type Stan interface {
 
 type Stanza struct {
 	XMLName xml.Name
-	core.Stanza
+	core.StanzaHeader
 	Err      error
 	Elements []Element
 }
@@ -123,8 +124,13 @@ func (st *Stanza) String() string {
 
 type JID string
 
-func NewJID(s string) JID {
+func ToJID(s string) JID {
 	return JID(s)
+}
+
+func (jid JID) Bare() string {
+	a := strings.SplitN(string(jid), "/", 2)
+	return a[0]
 }
 
 func (jid JID) Split() (local string, domain string, resource string) {

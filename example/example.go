@@ -40,7 +40,7 @@ func main() {
 	talk := client.NewClient(*server, *username, *password,
 		&client.Options{NoTLS: *notls, Debug: *debug, TlsConfig: &tls.Config{InsecureSkipVerify: true}})
 
-	talk.HandleFunc(xmpp.NSClient+" message", func(stanza *core.Stanza, e xmpp.Element) {
+	talk.HandleFunc(xmpp.NSClient+" message", func(header *core.StanzaHeader, e xmpp.Element) {
 		msg := e.(*xmpp.Stanza)
 		body := ""
 		subject := ""
@@ -54,41 +54,49 @@ func main() {
 			}
 		}
 		if len(body) > 0 {
-			talk.Send(xmpp.NewMessage(stanza.Types, stanza.From, body, subject))
+			talk.Send(xmpp.NewMessage(header.Types, header.From, body, subject))
 		}
 	})
 
-	talk.HandleFunc(xmpp.NSClient+" presence", func(stanza *core.Stanza, e xmpp.Element) {
-		if stanza.Types == "subscribe" {
-			talk.Send(xmpp.NewPresence("subscribed", stanza.Ids, stanza.From))
-			talk.Send(xmpp.NewPresence("subscribe", client.GenId(), stanza.From))
+	talk.HandleFunc(xmpp.NSClient+" presence", func(header *core.StanzaHeader, e xmpp.Element) {
+		if header.Types == "subscribe" {
+			talk.Send(xmpp.NewPresence("subscribed", header.Ids, header.From))
+			talk.Send(xmpp.NewPresence("subscribe", client.GenId(), header.From))
 		}
+
 	})
 
-	talk.HandleFunc(xmpp.NSPing+" ping", func(stanza *core.Stanza, e xmpp.Element) {
-		talk.Send(xmpp.NewIQ("result", stanza.Ids, stanza.From, nil))
+	talk.HandleFunc(xmpp.NSPing+" ping", func(header *core.StanzaHeader, e xmpp.Element) {
+		talk.Send(xmpp.NewIQ("result", header.Ids, header.From, nil))
 	})
 
 	filename := ""
-	talk.HandleFunc(xmpp.NSSI+" si", func(stanza *core.Stanza, e xmpp.Element) {
+	talk.HandleFunc(xmpp.NSSI+" si", func(header *core.StanzaHeader, e xmpp.Element) {
 		si := e.(*xep.SI)
 		filename = si.File.Name
 		submit := xep.NewFormData("submit", "", "",
 			xep.NewFormField("", "", "stream-method", "",
 				[]string{xmpp.NSByteStreams}, false, nil))
 
-		talk.Send(xmpp.NewIQ("result", stanza.Ids, stanza.From,
+		talk.Send(xmpp.NewIQ("result", header.Ids, header.From,
 			xep.NewSI("", "", "", nil, xep.NewFeature(submit))))
 	})
 
-	talk.HandleFunc(xmpp.NSDiscoInfo+" query", func(stanza *core.Stanza, e xmpp.Element) {
-		if stanza.Types == "result" {
+	talk.HandleFunc(xmpp.NSRoster+" query", func(header *core.StanzaHeader, e xmpp.Element) {
+		fmt.Println(e)
+	})
+	talk.HandleFunc(xmpp.NSDiscoItems+" query", func(header *core.StanzaHeader, e xmpp.Element) {
+		fmt.Println(e)
+	})
+	talk.HandleFunc(xmpp.NSDiscoInfo+" query", func(header *core.StanzaHeader, e xmpp.Element) {
+		if header.Types == "result" {
+			fmt.Println(e)
 			return
 		}
-		talk.Send(xmpp.NewIQ("result", stanza.Ids, stanza.From, xmpp.DiscInfoResult()))
+		talk.Send(xmpp.NewIQ("result", header.Ids, header.From, xmpp.DiscInfoResult()))
 	})
 
-	talk.HandleFunc(xmpp.NSByteStreams+" query", func(stanza *core.Stanza, e xmpp.Element) {
+	talk.HandleFunc(xmpp.NSByteStreams+" query", func(header *core.StanzaHeader, e xmpp.Element) {
 		query := e.(*xep.ByteStreamsQuery)
 		addr := query.Hosts[1].Host + ":" + query.Hosts[1].Port
 
@@ -98,11 +106,11 @@ func main() {
 			return
 		}
 		defer c.Close()
-		if err := socks5(c, xep.Sha1Addr(query.Sid, stanza.From, stanza.To)); err != nil {
+		if err := socks5(c, xep.Sha1Addr(query.Sid, header.From, header.To)); err != nil {
 			log.Println(err)
 			return
 		}
-		talk.Send(xmpp.NewIQ("result", stanza.Ids, stanza.From,
+		talk.Send(xmpp.NewIQ("result", header.Ids, header.From,
 			xep.NewByteStreamQuery(query.Sid, "",
 				xep.NewStreamHostUsed(query.Hosts[1].Jid), nil)))
 
@@ -114,37 +122,27 @@ func main() {
 		io.Copy(file, c)
 	})
 
-	if err := talk.Init(); err != nil {
-		log.Fatal(err)
-	}
+	talk.HandleFunc(xmpp.NSRoster+" query", func(header *core.StanzaHeader, e xmpp.Element) {
+		fmt.Println(e)
+	})
 
-	exit := make(chan int, 1)
+	talk.OnLogined(func(err error) {
+		if err != nil {
+			return
+		}
 
-	go func() {
-		talk.Run()
-		exit <- 1
-	}()
+		run(talk)
+	})
 
+	log.Fatal(talk.Run())
+}
+
+func run(talk *client.Client) {
 	talk.Send(xmpp.NewStanza("presence"))
+	talk.Send(xmpp.NewIQ("get", client.GenId(), "", &core.RosterQuery{}))
+	talk.Send(xmpp.NewIQ("get", client.GenId(), "", &xep.DiscoInfoQuery{}))
 
-	iq, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", &core.RosterQuery{}))
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(iq)
-
-	iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", &xep.DiscoInfoQuery{}))
-	if err != nil {
-		log.Println(err)
-	}
-	fmt.Println(iq)
-
-	iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", &xep.DiscoItemsQuery{}))
-	if err != nil {
-		log.Println(err)
-	}
-	fmt.Println(iq)
-
+	iq, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", &xep.DiscoItemsQuery{}))
 	s5b := ""
 	for _, item := range iq.E()[0].(*xep.DiscoItemsQuery).Items {
 		iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), item.Jid, &xep.DiscoInfoQuery{}))
@@ -201,7 +199,6 @@ func main() {
 			}
 	*/
 
-	<-exit
 }
 
 func socks5(c net.Conn, addr string) error {

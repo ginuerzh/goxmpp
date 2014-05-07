@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-type Stanza struct {
+type StanzaHeader struct {
 	Ids   string `xml:"id,attr,omitempty"`
 	Types string `xml:"type,attr,omitempty"`
 	From  string `xml:"from,attr,omitempty"`
