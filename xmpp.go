@@ -133,6 +133,11 @@ func (jid JID) Bare() string {
 	return a[0]
 }
 
+func (jid JID) Domain() string {
+	a := strings.SplitN(jid.Bare(), "@", 2)
+	return a[1]
+}
+
 func (jid JID) Split() (local string, domain string, resource string) {
 	a := strings.SplitN(string(jid), "@", 2)
 	if len(a) != 2 {
