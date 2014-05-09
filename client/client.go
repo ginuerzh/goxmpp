@@ -10,7 +10,7 @@ import (
 	xmpp "github.com/ginuerzh/goxmpp"
 	"github.com/ginuerzh/goxmpp/core"
 	"io"
-	"log"
+	//"log"
 	//"github.com/golang/glog"
 	"net"
 	"net/http"
@@ -114,7 +114,7 @@ func (c *Client) Run() error {
 		for {
 			_, err := c.Recv()
 			if err != nil {
-				log.Println("recv:", err)
+				//log.Println("recv:", err)
 				exit <- err
 				return
 			}
@@ -193,7 +193,8 @@ func connect(host, user, passwd, proxy string) (net.Conn, error) {
 	if len(proxy) > 0 {
 		addr = proxy
 	}
-	c, err := net.Dial("tcp", addr)
+
+	c, err := net.DialTimeout("tcp", addr, time.Second*10)
 	if err != nil {
 		return nil, err
 	}
