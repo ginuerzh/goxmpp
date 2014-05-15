@@ -19,6 +19,7 @@ import (
 )
 
 var server = flag.String("server", "talk.google.com:443", "server")
+var proxy = flag.String("proxy", "", "proxy server")
 var username = flag.String("username", "", "username")
 var password = flag.String("password", "", "password")
 var notls = flag.Bool("notls", false, "No TLS")
@@ -38,7 +39,7 @@ func main() {
 	}
 
 	talk := client.NewClient(*server, *username, *password,
-		&client.Options{NoTLS: *notls, Debug: *debug, TlsConfig: &tls.Config{InsecureSkipVerify: true}})
+		&client.Options{Proxy: *proxy, NoTLS: *notls, Debug: *debug, TlsConfig: &tls.Config{InsecureSkipVerify: true}})
 
 	talk.HandleFunc(xmpp.NSClient+" message", func(header *core.StanzaHeader, e xmpp.Element) {
 		msg := e.(*xmpp.Stanza)
@@ -140,63 +141,65 @@ func main() {
 func run(talk *client.Client) {
 	talk.Send(xmpp.NewStanza("presence"))
 	talk.Send(xmpp.NewIQ("get", client.GenId(), "", &core.RosterQuery{}))
-	talk.Send(xmpp.NewIQ("get", client.GenId(), "", &xep.DiscoInfoQuery{}))
-
-	iq, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", &xep.DiscoItemsQuery{}))
-	s5b := ""
-	for _, item := range iq.E()[0].(*xep.DiscoItemsQuery).Items {
-		iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), item.Jid, &xep.DiscoInfoQuery{}))
-		log.Println(iq)
-		result := iq.E()[0].(*xep.DiscoInfoQuery)
-		if result.Identities[0].Category == "proxy" && result.Identities[0].Type == "bytestreams" {
-			s5b = item.Jid
-		}
-	}
-
-	iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), s5b, &xep.ByteStreamsQuery{}))
-	if err != nil {
-		log.Println(err)
-	}
-	fmt.Println(iq)
-	streamHost := iq.E()[0].(*xep.ByteStreamsQuery).Hosts[0]
-
-	form := xep.NewFormData("form", "", "",
-		xep.NewFormField(xep.FieldSList, "", "stream-method", "", nil, false,
-			xep.NewFormOption("", xmpp.NSByteStreams)))
-	si := xep.NewSI(client.GenId(), "image/jpeg", xmpp.NSFileTransfer,
-		xep.NewFileTransfer("001.jpg", "1024", "", "", ""),
-		xep.NewFeature(form))
-	iq, err = talk.SendIQ(xmpp.NewIQ("set", client.GenId(), "user002@gerry-ubuntu-work/Spark 2.6.3", si))
-	fmt.Println(iq)
-
-	iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(),
-		"user002@gerry-ubuntu-work/Spark 2.6.3", &xep.DiscoInfoQuery{}))
-	fmt.Println(iq)
-
-	//iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "user002@gerry-ubuntu-work/Spark 2.6.3",
-	//	&xep.ByteStreamsQuery{}))
-	//fmt.Println(iq)
-
-	iq, err = talk.SendIQ(xmpp.NewIQ("set", client.GenId(),
-		"user002@gerry-ubuntu-work/Spark 2.6.3", xep.NewByteStreamQuery(client.GenId(), "tcp", nil, streamHost)))
-	fmt.Println(iq)
+	talk.Send(xmpp.NewIQ("get", client.GenId(), talk.Jid.Domain(), &xep.DiscoInfoQuery{}))
+	talk.Send(xmpp.NewIQ("get", client.GenId(), talk.Jid.Domain(), &xep.DiscoItemsQuery{}))
 
 	/*
-		vcard := &xep.VCard{}
-		_, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", vcard))
+		iq, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", &xep.DiscoItemsQuery{}))
+		s5b := ""
+		for _, item := range iq.E()[0].(*xep.DiscoItemsQuery).Items {
+			iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), item.Jid, &xep.DiscoInfoQuery{}))
+			log.Println(iq)
+			result := iq.E()[0].(*xep.DiscoInfoQuery)
+			if result.Identities[0].Category == "proxy" && result.Identities[0].Type == "bytestreams" {
+				s5b = item.Jid
+			}
+		}
+
+		iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), s5b, &xep.ByteStreamsQuery{}))
 		if err != nil {
 			log.Println(err)
 		}
+		fmt.Println(iq)
+		streamHost := iq.E()[0].(*xep.ByteStreamsQuery).Hosts[0]
 
-			if vcard.Photo != nil {
-				fmt.Println(vcard.Photo.Type)
-				data, err := base64.StdEncoding.DecodeString(vcard.Photo.BinVal)
-				if err != nil {
-					log.Println(err)
-				} else {
-					ioutil.WriteFile("photo.jpg", data, os.ModePerm)
-				}
+		form := xep.NewFormData("form", "", "",
+			xep.NewFormField(xep.FieldSList, "", "stream-method", "", nil, false,
+				xep.NewFormOption("", xmpp.NSByteStreams)))
+		si := xep.NewSI(client.GenId(), "image/jpeg", xmpp.NSFileTransfer,
+			xep.NewFileTransfer("001.jpg", "1024", "", "", ""),
+			xep.NewFeature(form))
+		iq, err = talk.SendIQ(xmpp.NewIQ("set", client.GenId(), "user002@gerry-ubuntu-work/Spark 2.6.3", si))
+		fmt.Println(iq)
+
+		iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(),
+			"user002@gerry-ubuntu-work/Spark 2.6.3", &xep.DiscoInfoQuery{}))
+		fmt.Println(iq)
+
+		//iq, err = talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "user002@gerry-ubuntu-work/Spark 2.6.3",
+		//	&xep.ByteStreamsQuery{}))
+		//fmt.Println(iq)
+
+		iq, err = talk.SendIQ(xmpp.NewIQ("set", client.GenId(),
+			"user002@gerry-ubuntu-work/Spark 2.6.3", xep.NewByteStreamQuery(client.GenId(), "tcp", nil, streamHost)))
+		fmt.Println(iq)
+
+
+			vcard := &xep.VCard{}
+			_, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), "", vcard))
+			if err != nil {
+				log.Println(err)
 			}
+
+				if vcard.Photo != nil {
+					fmt.Println(vcard.Photo.Type)
+					data, err := base64.StdEncoding.DecodeString(vcard.Photo.BinVal)
+					if err != nil {
+						log.Println(err)
+					} else {
+						ioutil.WriteFile("photo.jpg", data, os.ModePerm)
+					}
+				}
 	*/
 
 }

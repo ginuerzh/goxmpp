@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -114,7 +115,6 @@ func (c *Client) Run() error {
 		for {
 			_, err := c.Recv()
 			if err != nil {
-				//log.Println("recv:", err)
 				exit <- err
 				return
 			}
@@ -125,7 +125,7 @@ func (c *Client) Run() error {
 		select {
 		case v := <-c.sendChan:
 			if err := c.enc.Encode(v); err != nil {
-				return err
+				exit <- err
 			}
 		case <-c.recvChan:
 		case err := <-exit:
@@ -574,6 +574,7 @@ type roundTrip struct {
 	sendChan chan<- xmpp.Element
 	timeout  time.Duration
 	m        map[string]chan xmpp.Stan
+	lock     *sync.RWMutex
 }
 
 func NewRoundTrip(sendChan chan<- xmpp.Element) *roundTrip {
@@ -581,14 +582,22 @@ func NewRoundTrip(sendChan chan<- xmpp.Element) *roundTrip {
 		sendChan: sendChan,
 		timeout:  60 * time.Second,
 		m:        make(map[string]chan xmpp.Stan),
+		lock:     new(sync.RWMutex),
 	}
 }
 
 func (this *roundTrip) Request(iq xmpp.Stan) (resp xmpp.Stan, err error) {
 	ch := make(chan xmpp.Stan, 1)
-	this.m[iq.Id()] = ch
 
-	defer delete(this.m, iq.Id())
+	this.lock.Lock()
+	this.m[iq.Id()] = ch
+	this.lock.Unlock()
+
+	defer func() {
+		this.lock.Lock()
+		delete(this.m, iq.Id())
+		this.lock.Unlock()
+	}()
 
 	for retry := 1; retry > 0; retry-- {
 		this.sendChan <- iq
@@ -605,7 +614,9 @@ func (this *roundTrip) Request(iq xmpp.Stan) (resp xmpp.Stan, err error) {
 }
 
 func (this *roundTrip) Put(iq xmpp.Stan) bool {
+	this.lock.RLock()
 	ch, ok := this.m[iq.Id()]
+	this.lock.RUnlock()
 	if !ok {
 		return false
 	}

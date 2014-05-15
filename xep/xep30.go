@@ -15,6 +15,7 @@ type DiscoInfoQuery struct {
 	Node       string          `xml:"node,attr,omitempty"`
 	Identities []*InfoIdentity `xml:"identity"`
 	Features   []*InfoFeature  `xml:"feature"`
+	Datas      *XFormData      // muc see xep-0045 6.4
 }
 
 func (_ DiscoInfoQuery) Name() string {
@@ -28,7 +29,7 @@ func (_ DiscoInfoQuery) FullName() string {
 func (e DiscoInfoQuery) String() string {
 	b := &bytes.Buffer{}
 	for _, id := range e.Identities {
-		fmt.Fprintf(b, "%s/%s/%s\n", id.Name, id.Type, id.Category)
+		fmt.Fprintf(b, "%s %s(%s)\n", id.Category, id.Type, id.Name)
 	}
 	for _, f := range e.Features {
 		fmt.Fprintln(b, f.Var)

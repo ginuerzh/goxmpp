@@ -31,6 +31,7 @@ const (
 	NSFileTransfer = "http://jabber.org/protocol/si/profile/file-transfer"
 	NSByteStreams  = "http://jabber.org/protocol/bytestreams"
 	NSIBB          = "http://jabber.org/protocol/ibb"
+	NSMUC          = "http://jabber.org/protocol/muc"
 )
 
 var clientFeatures = []string{
