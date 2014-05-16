@@ -110,4 +110,7 @@ func init() {
 	// XEP199
 	Register("urn:xmpp:ping ping",
 		func() Element { return new(xep.Ping) })
+	// XEP203
+	Register("urn:xmpp:delay delay",
+		func() Element { return new(xep.Delay) })
 }

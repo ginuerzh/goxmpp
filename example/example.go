@@ -25,6 +25,8 @@ var password = flag.String("password", "", "password")
 var notls = flag.Bool("notls", false, "No TLS")
 var debug = flag.Bool("debug", false, "debug output")
 
+var features []string
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
@@ -42,21 +44,24 @@ func main() {
 		&client.Options{Proxy: *proxy, NoTLS: *notls, Debug: *debug, TlsConfig: &tls.Config{InsecureSkipVerify: true}})
 
 	talk.HandleFunc(xmpp.NSClient+" message", func(header *core.StanzaHeader, e xmpp.Element) {
-		msg := e.(*xmpp.Stanza)
-		body := ""
-		subject := ""
-		for _, e := range msg.E() {
-			if e.Name() == "body" {
-				body = e.(*core.MsgBody).Body
-				break
+		log.Println(e)
+		/*
+			msg := e.(*xmpp.Stanza)
+			body := ""
+			subject := ""
+			for _, e := range msg.E() {
+				if e.Name() == "body" {
+					body = e.(*core.MsgBody).Body
+					break
+				}
+				if e.Name() == "subject" {
+					subject = e.(*core.MsgSubject).Subject
+				}
 			}
-			if e.Name() == "subject" {
-				subject = e.(*core.MsgSubject).Subject
+			if len(body) > 0 {
+				talk.Send(xmpp.NewMessage(header.Types, header.From, body, subject))
 			}
-		}
-		if len(body) > 0 {
-			talk.Send(xmpp.NewMessage(header.Types, header.From, body, subject))
-		}
+		*/
 	})
 
 	talk.HandleFunc(xmpp.NSClient+" presence", func(header *core.StanzaHeader, e xmpp.Element) {
@@ -88,13 +93,61 @@ func main() {
 	})
 	talk.HandleFunc(xmpp.NSDiscoItems+" query", func(header *core.StanzaHeader, e xmpp.Element) {
 		fmt.Println(e)
+		for _, item := range e.(*xep.DiscoItemsQuery).Items {
+			talk.Send(xmpp.NewIQ("get", client.GenId(), item.Jid, new(xep.DiscoInfoQuery)))
+		}
 	})
 	talk.HandleFunc(xmpp.NSDiscoInfo+" query", func(header *core.StanzaHeader, e xmpp.Element) {
-		if header.Types == "result" {
-			fmt.Println(e)
+		if header.Types == "error" {
 			return
 		}
-		talk.Send(xmpp.NewIQ("result", header.Ids, header.From, xmpp.DiscInfoResult()))
+
+		query := e.(*xep.DiscoInfoQuery)
+
+		for _, id := range query.Identities {
+			// See http://xmpp.org/registrar/disco-categories.html
+			switch id.Category + " " + id.Type {
+			case "server im":
+				for _, feature := range query.Features {
+					features = append(features, feature.Var)
+				}
+			case "conference text":
+				log.Println("find Chat Service", id.Name, header.From)
+				iq, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), header.From, new(xep.DiscoItemsQuery)))
+				if err != nil {
+					log.Println(err)
+					break
+				}
+				if err = iq.Error(); err != nil {
+					log.Println(err)
+					break
+				}
+
+				query := iq.E()[0].(*xep.DiscoItemsQuery)
+
+				for _, item := range query.Items {
+					log.Println("find chat room", item.Jid, item.Name)
+					iq, err := talk.SendIQ(xmpp.NewIQ("get", client.GenId(), item.Jid, new(xep.DiscoInfoQuery)))
+					if err != nil {
+						log.Println(err)
+						break
+					}
+					if err = iq.Error(); err != nil {
+						log.Println(err)
+						break
+					}
+
+					log.Println(iq.E()[0])
+				}
+			case "directory chatroom":
+
+			case "pubsub service":
+			case "proxy bytestreams":
+
+			}
+		}
+
+		//talk.Send(xmpp.NewIQ("result", header.Ids, header.From, xmpp.DiscInfoResult()))
 	})
 
 	talk.HandleFunc(xmpp.NSByteStreams+" query", func(header *core.StanzaHeader, e xmpp.Element) {

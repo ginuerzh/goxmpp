@@ -32,6 +32,7 @@ const (
 	NSByteStreams  = "http://jabber.org/protocol/bytestreams"
 	NSIBB          = "http://jabber.org/protocol/ibb"
 	NSMUC          = "http://jabber.org/protocol/muc"
+	NSDelay        = "urn:xmpp:delay"
 )
 
 var clientFeatures = []string{
@@ -130,13 +131,32 @@ func ToJID(s string) JID {
 }
 
 func (jid JID) Bare() string {
-	a := strings.SplitN(string(jid), "/", 2)
+	a := strings.SplitN(jid.String(), "/", 2)
+	return a[0]
+}
+
+func (jid JID) Local() string {
+	a := strings.Split(jid.String(), "@")
 	return a[0]
 }
 
 func (jid JID) Domain() string {
 	a := strings.SplitN(jid.Bare(), "@", 2)
 	return a[1]
+}
+
+func (jid JID) Resource() string {
+	a := strings.SplitN(jid.String(), "/", 2)
+	if len(a) != 2 {
+		return ""
+	}
+
+	return a[1]
+}
+
+func (jid JID) AddResource(resource string) JID {
+	a := strings.SplitN(jid.String(), "/", 2)
+	return ToJID(a[0] + "/" + resource)
 }
 
 func (jid JID) Split() (local string, domain string, resource string) {
@@ -209,8 +229,8 @@ func NewMessage(typ string, to string, body string, subject string) *Stanza {
 	return msg
 }
 
-func NewPresence(typ string, id string, to string) *Stanza {
-	presence := NewStanza("presence")
+func NewPresence(typ string, id string, to string, e ...Element) *Stanza {
+	presence := NewStanza("presence", e...)
 	presence.Types = typ
 	presence.Ids = id
 	presence.To = to

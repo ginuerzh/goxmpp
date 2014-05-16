@@ -15,7 +15,7 @@ type DiscoInfoQuery struct {
 	Node       string          `xml:"node,attr,omitempty"`
 	Identities []*InfoIdentity `xml:"identity"`
 	Features   []*InfoFeature  `xml:"feature"`
-	Datas      *XFormData      // muc see xep-0045 6.4
+	FormData   *XFormData      // muc see xep-0045 6.4
 }
 
 func (_ DiscoInfoQuery) Name() string {
